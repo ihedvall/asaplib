@@ -247,7 +247,7 @@ bool IClient::HasService(const std::string& service) const {
 }
 
 bool IClient::IsSubscriptionInitialized() const {
-  std::ranges::(const auto& parameter : parameter_list_) {
+  for (const auto& parameter : parameter_list_) {
     if (!parameter.Exist()) {
       continue;
     }

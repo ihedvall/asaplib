@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-
+#include <ranges>
 #include "asap/a3parameter.h"
 #include "asap/asap3def.h"
 #include "asap/irequest.h"
