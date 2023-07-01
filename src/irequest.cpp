@@ -32,4 +32,56 @@ void IRequest::CreateBody(std::vector<uint8_t> &body) const {
   Asap3Helper::FromMc3Value(body, offset, sum);
 }
 
+template <>
+std::string IRequest::GetData(size_t index) const {
+  std::string value;
+
+  if (index >= data_list_.size()) {
+    return value;
+  }
+  const auto &data = data_list_[index];
+  try {
+    switch (data.type) {
+      case Mc3DataType::A_FLOAT64:
+        value = std::to_string(std::any_cast<double>(data.value));
+        break;
+
+      case Mc3DataType::MC3_STRING:
+        value = std::any_cast<std::string>(data.value);
+        break;
+
+      case Mc3DataType::A_INT16:
+        value = std::to_string(std::any_cast<int16_t>(data.value));
+        break;
+
+      case Mc3DataType::A_UINT16:
+        value = std::to_string(std::any_cast<uint16_t>(data.value));
+        break;
+
+      case Mc3DataType::A_INT32:
+        value = std::to_string(std::any_cast<int32_t>(data.value));
+        break;
+
+      case Mc3DataType::A_UINT32:
+        value = std::to_string(std::any_cast<uint32_t>(data.value));
+        break;
+
+      case Mc3DataType::A_INT64:
+        value = std::to_string(std::any_cast<int64_t>(data.value));
+        break;
+
+      case Mc3DataType::A_UINT64:
+        value = std::to_string(std::any_cast<uint64_t>(data.value));
+        break;
+
+      case Mc3DataType::A_FLOAT32:
+      default:
+        value = std::to_string(std::any_cast<float>(data.value));
+        break;
+    }
+  } catch (const std::exception &err) {
+  }
+  return value;
+}
+
 }  // namespace asap3

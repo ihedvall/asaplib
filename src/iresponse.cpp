@@ -7,31 +7,40 @@
 
 #include <sstream>
 
+#include "asap/iclient.h"
 #include "asap3helper.h"
 
 namespace {
 
 const asap3::DataValueList kErrorResponse = {
-    {"ErrorCode", asap3::Mc3DataType::A_UINT16, 0},
-    {"ErrorText", asap3::Mc3DataType::MC3_STRING, ""}};
+    {"Error Code", asap3::Mc3DataType::A_UINT16, static_cast<uint16_t>(0)},
+    {"Error Text", asap3::Mc3DataType::MC3_STRING, std::string()}};
 
 const asap3::DataValueList kIdentifyResponse = {
-    {"Version", asap3::Mc3DataType::A_UINT16, 0},
-    {"Name", asap3::Mc3DataType::MC3_STRING, ""}};
+    {"Version", asap3::Mc3DataType::A_UINT16, static_cast<uint16_t>(0)},
+    {"Name", asap3::Mc3DataType::MC3_STRING, std::string()}};
 
 const asap3::DataValueList kDefineDescFileResponse = {
-    {"LUN", asap3::Mc3DataType::A_UINT16, 0},
-    {"DescriptionFile", asap3::Mc3DataType::MC3_STRING, ""},
-    {"BinaryFile", asap3::Mc3DataType::MC3_STRING, ""},
-    {"CalibrationFile", asap3::Mc3DataType::MC3_STRING, ""},
+    {"LUN", asap3::Mc3DataType::A_UINT16, static_cast<uint16_t>(0)},
+    {"Description File", asap3::Mc3DataType::MC3_STRING, std::string()},
+    {"Binary File", asap3::Mc3DataType::MC3_STRING, std::string()},
+    {"Calibration File", asap3::Mc3DataType::MC3_STRING, std::string()},
 };
 
 const asap3::DataValueList kSelectDescFileResponse = {
-    {"LUN", asap3::Mc3DataType::A_UINT16, 0},
+    {"LUN", asap3::Mc3DataType::A_UINT16, static_cast<uint16_t>(0)},
 };
 
 const asap3::DataValueList kGetCalInfoResponse = {
-    {"Pages", asap3::Mc3DataType::A_UINT16, 0},
+    {"Pages", asap3::Mc3DataType::A_UINT16, static_cast<uint16_t>(0)},
+};
+
+const asap3::DataValueList kServiceInfoResponse = {
+    {"Service Info", asap3::Mc3DataType::MC3_STRING, std::string()},
+};
+
+const asap3::DataValueList kExecuteServiceResponse = {
+    {"Output", asap3::Mc3DataType::MC3_STRING, std::string()},
 };
 }  // namespace
 
@@ -53,9 +62,11 @@ void IResponse::CreateBody(std::vector<uint8_t> &body) {
   Asap3Helper::FromMc3Value(body, offset, sum_);
 }
 
-IResponse::IResponse(const std::vector<uint8_t> &body_without_length) {
+IResponse::IResponse(IClient *client,
+                     const std::vector<uint8_t> &body_without_length)
+    : client_(client),
+      length_(static_cast<uint16_t>(body_without_length.size() + 2)) {
   // Note that the body exclude the 2 length bytes.
-  length_ = static_cast<uint16_t>(body_without_length.size() + 2);
   if (length_ < 8) {
     invalid_checksum_ = true;
     return;
@@ -63,11 +74,7 @@ IResponse::IResponse(const std::vector<uint8_t> &body_without_length) {
 
   size_t offset = Asap3Helper::ToMc3Value(body_without_length, 0, cmd_);
   offset += Asap3Helper::ToMc3Value(body_without_length, offset, status_);
-  if (length_ <= 8) {
-    data_list_.clear();
-  } else {
-    BodyToDataList(body_without_length, offset);
-  }
+  BodyToDataList(body_without_length, offset);
   Asap3Helper::ToMc3Value(body_without_length, body_without_length.size() - 2,
                           sum_);
   const auto sum = length_ + Asap3Helper::Checksum(body_without_length);
@@ -128,11 +135,139 @@ void IResponse::BodyToDataList(const std::vector<uint8_t> &body,
       break;
     }
 
+    case CommandCode::GET_ONLINE_VALUE:
+    case CommandCode::GET_ONLINE_VALUE_EV2:
+      // Fills the previously defined online_value_list_
+      if (client_ != nullptr) {
+        client_->SetOnlineData(body, offset);
+      }
+      return;
+
+    case CommandCode::GET_USER_DEFINED_VALUE:
+      if (client_ != nullptr) {
+        client_->SetUserDefinedData(body, offset);
+      }
+      return;
+
+    case CommandCode::GET_USER_DEFINED_VALUE_LIST:
+      if (client_ != nullptr) {
+        client_->DefineUserDefinedData(body, offset);
+      }
+      GetUserDefineListToDataList(body, offset);
+      return;
+
+    case CommandCode::QUERY_AVAILABLE_SERVICE:
+      QueryAvailableServicesToDataList(body, offset);
+      return;
+
+    case CommandCode::GET_SERVICE_INFORMATION:
+      data_list_ = kServiceInfoResponse;
+      break;
+
+    case CommandCode::EXECUTE_SERVICE:
+      data_list_ = kExecuteServiceResponse;
+      break;
+
     default:
       // Empty response list
       break;
   }
   Asap3Helper::BodyToDataList(body, offset, data_list_);
+}
+
+void IResponse::GetUserDefineListToDataList(const std::vector<uint8_t> &body,
+                                            size_t offset) {
+  data_list_.clear();
+  uint16_t values = 0;
+  size_t index = offset;
+  index += Asap3Helper::ToMc3Value(body, index, values);
+  data_list_.push_back({"Values", Mc3DataType::A_UINT16, values});
+  for (uint16_t value = 0; value < values && index + 6 <= body.size() - 2;
+       ++value) {
+    std::ostringstream label_lun;
+    label_lun << "LUN " << value + 1;
+
+    uint16_t lun = 0;
+    index += Asap3Helper::ToMc3Value(body, index, lun);
+    data_list_.push_back({label_lun.str(), Mc3DataType::A_UINT16, lun});
+
+    std::ostringstream label_name;
+    label_name << "Value " << value + 1;
+
+    std::string name;
+    index += Asap3Helper::ToMc3Value(body, index, name);
+    data_list_.push_back({label_name.str(), Mc3DataType::MC3_STRING, name});
+  }
+}
+
+void IResponse::QueryAvailableServicesToDataList(
+    const std::vector<uint8_t> &body, size_t offset) {
+  data_list_.clear();
+  uint16_t services = 0;
+  size_t index = offset;
+  index += Asap3Helper::ToMc3Value(body, index, services);
+  data_list_.push_back({"Services", Mc3DataType::A_UINT16, services});
+  for (uint16_t service = 0; service < services && index + 2 <= body.size() - 2;
+       ++service) {
+    std::ostringstream label;
+    label << "Service " << service + 1;
+
+    std::string name;
+    index += Asap3Helper::ToMc3Value(body, index, name);
+    data_list_.push_back({label.str(), Mc3DataType::MC3_STRING, name});
+  }
+}
+
+template <>
+std::string IResponse::GetData(size_t index) const {
+  std::string value;
+
+  if (index >= data_list_.size()) {
+    return value;
+  }
+  const auto &data = data_list_[index];
+  try {
+    switch (data.type) {
+      case Mc3DataType::A_FLOAT64:
+        value = std::to_string(std::any_cast<double>(data.value));
+        break;
+
+      case Mc3DataType::MC3_STRING:
+        value = std::any_cast<std::string>(data.value);
+        break;
+
+      case Mc3DataType::A_INT16:
+        value = std::to_string(std::any_cast<int16_t>(data.value));
+        break;
+
+      case Mc3DataType::A_UINT16:
+        value = std::to_string(std::any_cast<uint16_t>(data.value));
+        break;
+
+      case Mc3DataType::A_INT32:
+        value = std::to_string(std::any_cast<int32_t>(data.value));
+        break;
+
+      case Mc3DataType::A_UINT32:
+        value = std::to_string(std::any_cast<uint32_t>(data.value));
+        break;
+
+      case Mc3DataType::A_INT64:
+        value = std::to_string(std::any_cast<int64_t>(data.value));
+        break;
+
+      case Mc3DataType::A_UINT64:
+        value = std::to_string(std::any_cast<uint64_t>(data.value));
+        break;
+
+      case Mc3DataType::A_FLOAT32:
+      default:
+        value = std::to_string(std::any_cast<float>(data.value));
+        break;
+    }
+  } catch (const std::exception &err) {
+  }
+  return value;
 }
 
 }  // namespace asap3

@@ -121,4 +121,11 @@ struct DataValue {
 
 using DataValueList = std::vector<DataValue>;
 
+struct Service {
+  std::string name;
+  std::string info;
+};
+
+using ServiceList = std::vector<Service>;
+
 }  // namespace asap3

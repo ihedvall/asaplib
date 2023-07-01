@@ -11,7 +11,10 @@
 
 namespace asap3 {
 
-enum class Asap3ClientType : uint8_t { QueryComTestParameters = 0 };
+enum class Asap3ClientType : uint8_t {
+  BasicAsap3Client = 0,
+  QueryCtParameters = 1,
+};
 
 class Asap3Factory {
  public:

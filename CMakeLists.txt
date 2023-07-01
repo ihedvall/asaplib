@@ -21,20 +21,20 @@ include(script/doxygen.cmake)
 include(script/wxwidgets.cmake)
 
 add_library(asap STATIC
-            src/asap3def.cpp include/asap/asap3def.h
-            src/irequest.cpp include/asap/irequest.h
-            src/iresponse.cpp include/asap/iresponse.h
-            src/asap3helper.cpp src/asap3helper.h
-            src/itelegram.cpp include/asap/itelegram.h
-            src/iclient.cpp include/asap/iclient.h
-            src/asap3factory.cpp include/asap/asap3factory.h
-            src/queryparameters.cpp src/queryparameters.h src/asap3client.cpp src/asap3client.h)
+        src/asap3def.cpp include/asap/asap3def.h
+        src/irequest.cpp include/asap/irequest.h
+        src/iresponse.cpp include/asap/iresponse.h
+        src/asap3helper.cpp src/asap3helper.h
+        src/itelegram.cpp include/asap/itelegram.h
+        src/iclient.cpp include/asap/iclient.h
+        src/asap3factory.cpp include/asap/asap3factory.h
+        src/queryparameters.cpp src/queryparameters.h src/asap3client.cpp src/asap3client.h src/a3parameter.cpp include/asap/a3parameter.h src/ctasap3client.cpp src/ctasap3client.h)
 
 target_include_directories(asap PUBLIC
         $<INSTALL_INTERFACE:include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         )
-		
+
 target_include_directories(asap PRIVATE ${utillib_SOURCE_DIR}/include)
 target_include_directories(asap PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(asap PRIVATE expat)
@@ -45,12 +45,12 @@ target_compile_definitions(asap PRIVATE XML_STATIC)
 
 if (MSVC)
     target_compile_definitions(asap PRIVATE _WIN32_WINNT=0x0A00)
-endif()
+endif ()
 
 if (GTEST_FOUND AND ASAP_TEST)
     enable_testing()
     add_subdirectory(test)
-endif()
+endif ()
 
 #if (DOXYGEN_FOUND AND (CMAKE_BUILD_TYPE MATCHES "^[Rr]elease") )
 #

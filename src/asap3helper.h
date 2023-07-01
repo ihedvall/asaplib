@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "asap/a3parameter.h"
 #include "asap/asap3def.h"
 #include "asap/irequest.h"
 #include "asap/iresponse.h"
@@ -42,6 +43,9 @@ class Asap3Helper {
   static std::string StatusCodeToText(StatusCode status);
   static std::string RequestToPlainText(const IRequest& request);
   static std::string ResponseToPlainText(const IResponse& response);
+  static float InvalidFloat();
+  static void ParseCtParameterConfigString(const std::string& config,
+                                           A3ParameterList& parameter_list);
 };
 
 template <typename T>

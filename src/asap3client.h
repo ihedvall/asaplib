@@ -12,9 +12,7 @@
 #include <thread>
 #include <vector>
 
-#include <util/ilisten.h>
 #include "asap/iclient.h"
-
 
 namespace asap3 {
 
@@ -25,6 +23,8 @@ class Asap3Client : public IClient {
   bool Start() override;
   bool Stop() override;
   bool IsIdle() const override;
+  bool WaitOnIdle() const override;
+
  protected:
   std::thread worker_thread_;
   std::atomic<bool> stop_thread_ = true;
@@ -48,10 +48,8 @@ class Asap3Client : public IClient {
   std::vector<uint8_t>
       body_data_;  ///< Receive body buffer (excluding length word)
   std::vector<uint8_t> transmit_data_;  ///< Transmit body buffer
-  std::unique_ptr<util::log::IListen> listen_;
 
   std::atomic<bool> restart_ = false;
-
 
   void WorkerThread();
   void MessageThread();
@@ -65,10 +63,10 @@ class Asap3Client : public IClient {
   void HandleRequest(const IRequest& request);
   void Close();
   virtual void StartMessageThread();
+  virtual void OnStartMessage();
   void StopMessageThread();
 
-  void ListenRequest(const IRequest& request);
-  void ListenResponse(const IResponse& response);
+ private:
 };
 
 }  // namespace asap3

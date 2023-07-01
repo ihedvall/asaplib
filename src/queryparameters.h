@@ -18,9 +18,18 @@ namespace asap3 {
 
 class QueryParameters : public Asap3Client {
  public:
-  QueryParameters();
+  QueryParameters() = default;
   ~QueryParameters() override;
 
+  bool Start() override;
+
+ protected:
+  void OnStartMessage() override;
+  bool HandleTelegram(ITelegram& telegram) override;
+
+ private:
+  void SetExecuteService(const std::string& service, const std::string& input,
+                         const std::string& output);
 };
 
 }  // namespace asap3

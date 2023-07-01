@@ -5,11 +5,8 @@
 
 #include "asap3client.h"
 
-#include <util/logstream.h>
-#include <util/timestamp.h>
-#include <util/utilfactory.h>
-
 #include <chrono>
+#include <functional>
 #include <sstream>
 
 #include "asap3helper.h"
@@ -30,11 +27,7 @@ asap3::DataValueList kIdentifyList = {
 namespace asap3 {
 
 Asap3Client::Asap3Client()
-    : resolver_(context_),
-      retry_timer_(context_),
-      deadlock_timer_(context_),
-      listen_(
-          util::UtilFactory::CreateListen("ListenProxy", "LISASAP3CLIENT")) {
+    : resolver_(context_), retry_timer_(context_), deadlock_timer_(context_) {
   short_data_.resize(2, 0);
 }
 
@@ -47,7 +40,7 @@ bool Asap3Client::Start() {
   // Fix some type of name if no name given.
   if (Name().empty()) {
     std::ostringstream temp;
-    temp << "A3C:" << Port();
+    temp << "A3C-" << Port();
     Name(temp.str());
   }
 
@@ -218,9 +211,11 @@ void Asap3Client::DoReadBody() {  // NOLINT
 }
 
 void Asap3Client::HandleResponse() {
-  std::unique_ptr<IResponse> response = std::make_unique<IResponse>(body_data_);
+  std::unique_ptr<IResponse> response =
+      std::make_unique<IResponse>(this, body_data_);
   ListenResponse(*response);
   const auto status = response->Status();
+  const auto& response_list = response->DataList();
   const auto* request =
       current_message_ ? current_message_->Request() : nullptr;
   if (request != nullptr && request->Cmd() == response->Cmd()) {
@@ -245,12 +240,14 @@ void Asap3Client::HandleResponse() {
       break;
 
     case StatusCode::STATUS_ERROR: {
-      const auto& data_list = response->DataList();
       const auto error_code =
-          data_list.empty() ? 0 : std::any_cast<uint16_t>(data_list[0].value);
-      const auto error = data_list.size() <= 1
-                             ? std::string()
-                             : std::any_cast<std::string>(data_list[1].value);
+          response_list.empty()
+              ? 0
+              : std::any_cast<uint16_t>(response_list[0].value);
+      const auto error =
+          response_list.size() <= 1
+              ? std::string()
+              : std::any_cast<std::string>(response_list[1].value);
       listen_->ListenOut() << "Error message. Error: " << error_code << ":"
                            << error;
       HandleTelegram(*current_message_);
@@ -285,7 +282,7 @@ void Asap3Client::MessageThread() {
       for (size_t timeout = 0;
            !response_handled_ && !stop_message_ && timeout < 600; ++timeout) {
         std::unique_lock lock(locker_);
-        message_condition_.wait_for(lock, 600s, [&] {
+        message_condition_.wait_for(lock, 1s, [&] {
           return response_handled_.load() || stop_message_.load();
         });
       }
@@ -301,9 +298,12 @@ void Asap3Client::StartMessageThread() {
   telegram_queue_.Start();
   message_thread_ = std::thread(&Asap3Client::MessageThread, this);
   SendTelegram(CommandCode::INIT, kEmptyList);
+
   auto identify_list = kIdentifyList;
   Asap3Helper::SetDataListProperty(identify_list, "Name", Name());
-  SendTelegram(CommandCode::IDENTIFY, kIdentifyList);
+  SendTelegram(CommandCode::IDENTIFY, identify_list);
+
+  OnStartMessage();
 }
 
 void Asap3Client::StopMessageThread() {
@@ -331,94 +331,28 @@ void Asap3Client::HandleRequest(const IRequest& request) {
   request.CreateBody(transmit_data_);
   ListenRequest(request);
   async_write(*socket_, buffer(transmit_data_),
-              [](const error_code& error, size_t nof_bytes) {});
-}
-
-void Asap3Client::ListenRequest(const IRequest& request) {
-  if (!listen_->IsActive()) {
-    return;
-  }
-  // Log level 0: Show all plain text
-  // Log level 1: Hide cyclic data
-  // Log level 2: Hide commands
-  // Log level 3: Show hex
-
-  switch (listen_->LogLevel()) {
-    case 3: {
-      std::vector<uint8_t> temp_body;
-      request.CreateBody(temp_body);
-      const auto now = util::time::TimeStampToNs();
-      std::ostringstream pre_text;
-      pre_text << Name() << "T:";
-      listen_->ListenTransmit(now, pre_text.str(), temp_body, nullptr);
-      break;
-    }
-
-    case 1:  // Hide cyclic data
-      if (request.Cmd() != CommandCode::GET_ONLINE_VALUE &&
-          request.Cmd() != CommandCode::GET_ONLINE_VALUE_EV2) {
-        listen_->ListenOut() << Asap3Helper::RequestToPlainText(request);
-      }
-      break;
-
-    case 2:  // Hide commands data (Well opposite of case 1)
-      if (request.Cmd() == CommandCode::GET_ONLINE_VALUE ||
-          request.Cmd() == CommandCode::GET_ONLINE_VALUE_EV2) {
-        listen_->ListenOut() << Asap3Helper::RequestToPlainText(request);
-      }
-      break;
-
-    case 0:
-    default:
-      listen_->ListenOut() << Asap3Helper::RequestToPlainText(request);
-      break;
-  }
-}
-
-void Asap3Client::ListenResponse(const IResponse& response) {
-  if (!listen_->IsActive()) {
-    return;
-  }
-  // Log level 0: Show all plain text
-  // Log level 1: Hide cyclic data
-  // Log level 2: Hide commands
-  // Log level 3: Show hex
-
-  switch (listen_->LogLevel()) {
-    case 3: {
-      IResponse temp(response);
-      std::vector<uint8_t> temp_body;
-      temp.CreateBody(temp_body);
-      const auto now = util::time::TimeStampToNs();
-      std::ostringstream pre_text;
-      pre_text << Name() << "R:";
-      listen_->ListenReceive(now, pre_text.str(), temp_body, nullptr);
-      break;
-    }
-
-    case 1:  // Hide cyclic data
-      if (response.Cmd() != CommandCode::GET_ONLINE_VALUE &&
-          response.Cmd() != CommandCode::GET_ONLINE_VALUE_EV2) {
-        listen_->ListenOut() << Asap3Helper::ResponseToPlainText(response);
-      }
-      break;
-
-    case 2:  // Hide commands data (Well opposite of case 1)
-      if (response.Cmd() == CommandCode::GET_ONLINE_VALUE ||
-          response.Cmd() == CommandCode::GET_ONLINE_VALUE_EV2) {
-        listen_->ListenOut() << Asap3Helper::ResponseToPlainText(response);
-      }
-      break;
-
-    case 0:
-    default:
-      listen_->ListenOut() << Asap3Helper::ResponseToPlainText(response);
-      break;
-  }
+              [&](const error_code& error, size_t nof_bytes) {
+                if (error) {
+                  listen_->ListenOut()
+                      << "Write error. Error: " << error.message();
+                }
+              });
 }
 
 bool Asap3Client::IsIdle() const {
   return IsConnected() && telegram_queue_.Empty() && response_handled_;
 }
+
+bool Asap3Client::WaitOnIdle() const {
+  while (!stop_thread_) {
+    if (IsIdle()) {
+      return true;
+    }
+    std::this_thread::sleep_for(10ms);
+  }
+  return false;
+}
+
+void Asap3Client::OnStartMessage() {}
 
 }  // namespace asap3

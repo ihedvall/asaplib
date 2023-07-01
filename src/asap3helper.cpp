@@ -5,7 +5,17 @@
 
 #include "asap3helper.h"
 
+#include <util/stringutil.h>
+
+#include <boost/algorithm/string.hpp>
+#include <iostream>
 #include <sstream>
+
+using namespace util::string;
+
+namespace {
+const std::vector<uint8_t> kInvalidFloatBuffer = {0xFF, 0x00, 0x00, 0x00};
+}
 
 namespace asap3 {
 
@@ -32,7 +42,7 @@ size_t Asap3Helper::DataListSize(const std::vector<DataValue> &data_list) {
         if ((temp % 2) != 0) {
           ++temp;
         }
-        count += 2;
+        count += temp + 2;
         break;
       }
 
@@ -239,6 +249,9 @@ std::string Asap3Helper::DataListToText(
     const std::vector<DataValue> &data_list) {
   std::ostringstream temp;
   for (const auto &data : data_list) {
+    if (!temp.str().empty()) {
+      temp << ", ";
+    }
     temp << data.name << ": ";
     switch (data.type) {
       case Mc3DataType::A_FLOAT64: {
@@ -296,7 +309,6 @@ std::string Asap3Helper::DataListToText(
         break;
       }
     }
-    temp << " ";
   }
   return temp.str();
 }
@@ -457,6 +469,69 @@ std::string Asap3Helper::ResponseToPlainText(const IResponse &response) {
        << " S:" << StatusCodeToText(response.Status()) << " "
        << DataListToText(response.DataList());
   return temp.str();
+}
+
+float Asap3Helper::InvalidFloat() {
+  float temp = 0.0F;
+  ToMc3Value(kInvalidFloatBuffer, 0, temp);
+  return temp;
+}
+
+void Asap3Helper::ParseCtParameterConfigString(
+    const std::string &config, A3ParameterList &parameter_list) {
+  // First split the string into key/value pairs
+  std::vector<std::string> config_list;
+  boost::algorithm::split(config_list, config, boost::is_any_of("\n"));
+  std::unique_ptr<A3Parameter> parameter;
+
+  for (const auto &temp : config_list) {
+    // Note the temp may be empty due to a bug in the boost split function
+    if (IEquals(temp, "Name=", 5)) {
+      // Start of new parameter. Save the old parameter and create a new one.
+      if (parameter) {
+        parameter_list.push_back(*parameter);
+        parameter.reset();
+      }
+      parameter = std::make_unique<A3Parameter>();
+      parameter->Name(Trim(temp.substr(5)));
+    }
+    if (!parameter) {
+      continue;
+    }
+
+    if (IEquals(temp, "Unit=", 5)) {
+      parameter->Unit(Trim(temp.substr(5)));
+    } else if (IEquals(temp, "Type=", 5)) {
+      const int type = std::stoi(temp.substr(5));
+      parameter->Type(static_cast<Mc3DataType>(type));
+    } else if (IEquals(temp, "Max=", 4)) {
+      parameter->Max(std::stod(temp.substr(4)));
+    } else if (IEquals(temp, "Min=", 4)) {
+      parameter->Min(std::stod(temp.substr(4)));
+    } else if (IEquals(temp, "Descr=", 6)) {
+      parameter->Description(Trim(temp.substr(6)));
+    } else if (IEquals(temp, "Device=", 7)) {
+      parameter->Device(Trim(temp.substr(7)));
+    } else if (IEquals(temp, "Id=", 3)) {
+      parameter->Identity(Trim(temp.substr(3)));
+    } else if (IEquals(temp, "Signal=", 7)) {
+      parameter->Signal(Trim(temp.substr(7)));
+    } else if (IEquals(temp, "SetPoint=", 9)) {
+      const int set_point = std::stoi(temp.substr(9));
+      parameter->SetPoint(set_point == 1);
+    } else if (IEquals(temp, "Dpname=", 7)) {
+      parameter->DisplayName(Trim(temp.substr(7)));
+    } else if (IEquals(temp, "Cycle=", 6)) {
+      const int cycle_time = std::stoi(temp.substr(6));
+      parameter->CycleTime(cycle_time);
+    } else if (IEquals(temp, "NofDec=", 7)) {
+      const int nof_dec = std::stoi(temp.substr(7));
+      parameter->NofDecimals(static_cast<uint8_t>(nof_dec));
+    } else if (IEquals(temp, "Lun=", 4)) {
+      const int lun = std::stoi(temp.substr(4));
+      parameter->LunNo(static_cast<uint16_t>(lun));
+    }
+  }
 }
 
 template <>
