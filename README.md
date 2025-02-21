@@ -1,8 +1,8 @@
-# Library ASAP3 protocol and ASAP2 parsing
+# Library ASAP3 protocol 
 
 ## Summary
 
-The library contains interface against the ASAP3 protocol and a parser for ASAP2 files.
+The library contains interface against the ASAP3 protocol. The ASAP2 have been moved to the A2L repository.
 
 ## Documentation
 
